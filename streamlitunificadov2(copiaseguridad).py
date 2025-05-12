@@ -119,134 +119,6 @@ def registrar_vehiculo(empleado_id, placa, marca, modelo, tipo, color, foto_byte
         logger.error(f"Error al registrar vehículo con placa {placa}: {e}")
         return False
 
-def obtener_vehiculos(activo=None):
-    """Obtiene la lista de vehículos con opción de filtrar por estado activo/inactivo"""
-    try:
-        conexion = conectar_bd()
-        if conexion and conexion.is_connected():
-            cursor = conexion.cursor(dictionary=True)
-            
-            query = """
-            SELECT v.id, v.placa, v.marca, v.modelo, v.tipo, v.color, v.activo, 
-                   CONCAT(e.nombre, ' ', e.apellido) as empleado_nombre, e.id as empleado_id
-            FROM vehiculos v
-            LEFT JOIN empleados e ON v.empleado_id = e.id
-            """
-            
-            if activo is not None:
-                query += " WHERE v.activo = %s"
-                cursor.execute(query, (activo,))
-            else:
-                cursor.execute(query)
-                
-            vehiculos = cursor.fetchall()
-            cursor.close()
-            conexion.close()
-            return vehiculos
-        return []
-    except Error as e:
-        st.error(f"Error al obtener vehículos: {e}")
-        logger.error(f"Error al obtener lista de vehículos: {e}")
-        return []
-
-def modificar_vehiculo(veh_id, placa, marca, modelo, tipo, color, empleado_id, foto_bytes=None):
-    try:
-        conexion = conectar_bd()
-        if conexion and conexion.is_connected():
-            # Verificar si la placa ya existe para otro vehículo
-            cursor = conexion.cursor()
-            cursor.execute("SELECT id FROM vehiculos WHERE UPPER(placa) = UPPER(%s) AND id != %s", (placa, veh_id))
-            existe = cursor.fetchone()
-            
-            if existe:
-                st.error("La placa ya está registrada para otro vehículo")
-                return False
-            
-            if foto_bytes:
-                # Actualizar con foto
-                query = """
-                    UPDATE vehiculos 
-                    SET placa=%s, marca=%s, modelo=%s, tipo=%s, 
-                        color=%s, empleado_id=%s, foto_vehiculo=%s
-                    WHERE id=%s
-                """
-                cursor.execute(query, (placa.upper(), marca, modelo, tipo, color, empleado_id, foto_bytes, veh_id))
-            else:
-                # Actualizar sin cambiar la foto
-                query = """
-                    UPDATE vehiculos 
-                    SET placa=%s, marca=%s, modelo=%s, tipo=%s, 
-                        color=%s, empleado_id=%s
-                    WHERE id=%s
-                """
-                cursor.execute(query, (placa.upper(), marca, modelo, tipo, color, empleado_id, veh_id))
-            
-            conexion.commit()
-            
-            if cursor.rowcount == 0:
-                st.error("No se encontró el vehículo para actualizar")
-                return False
-                
-            cursor.close()
-            conexion.close()
-            st.success("Vehículo actualizado correctamente")
-            return True
-            
-        st.error("No se pudo conectar a la base de datos")
-        return False
-    except Error as e:
-        st.error(f"Error de base de datos: {str(e)}")
-        logger.error(f"Error al modificar vehículo {veh_id}: {e}")
-        return False
-
-def desactivar_vehiculo(veh_id):
-    try:
-        conexion = conectar_bd()
-        if conexion and conexion.is_connected():
-            cursor = conexion.cursor()
-            cursor.execute("UPDATE vehiculos SET activo=0 WHERE id=%s", (veh_id,))
-            conexion.commit()
-            
-            if cursor.rowcount == 0:
-                st.error("No se encontró el vehículo para desactivar")
-                return False
-                
-            cursor.close()
-            conexion.close()
-            st.success("Vehículo desactivado correctamente")
-            return True
-            
-        st.error("No se pudo conectar a la base de datos")
-        return False
-    except Error as e:
-        st.error(f"Error de base de datos: {str(e)}")
-        logger.error(f"Error al desactivar vehículo {veh_id}: {e}")
-        return False
-
-def activar_vehiculo(veh_id):
-    try:
-        conexion = conectar_bd()
-        if conexion and conexion.is_connected():
-            cursor = conexion.cursor()
-            cursor.execute("UPDATE vehiculos SET activo=1 WHERE id=%s", (veh_id,))
-            conexion.commit()
-            
-            if cursor.rowcount == 0:
-                st.error("No se encontró el vehículo para activar")
-                return False
-                
-            cursor.close()
-            conexion.close()
-            st.success("Vehículo activado correctamente")
-            return True
-            
-        st.error("No se pudo conectar a la base de datos")
-        return False
-    except Error as e:
-        st.error(f"Error de base de datos: {str(e)}")
-        logger.error(f"Error al activar vehículo {veh_id}: {e}")
-        return False
-
 def obtener_placa(location, img, gray):
     try:
         mask = np.zeros(gray.shape, np.uint8)
@@ -696,13 +568,13 @@ def procesar_imagen_facial(bytes_data):
 # ------------------------- Interfaz Principal -------------------------
 
 def main():
-    st.title("📊 SmartPark - Sistema Integrado de Reconocimiento")
+    st.title("🚗 SmartPark - Sistema Integrado de Reconocimiento")
     
     with st.sidebar:
         st.header("Información")
         st.info("""
         1. Gestión de empleados
-        2. Gestión de vehículos
+        2. Registro de vehículos
         3. Reconocimiento de placas
         4. Reconocimiento facial
         """)
@@ -742,7 +614,7 @@ def main():
     # Pestañas principales
     tab1, tab2, tab3, tab4 = st.tabs([
         "👤 Gestión de Empleados", 
-        "📋 Gestión de Vehículos", 
+        "📋 Registro de Vehículos", 
         "🔍 Reconocimiento de Placas",
         "😊 Reconocimiento Facial"
     ])
@@ -831,6 +703,7 @@ def main():
                     
                     if empleados:
                         for empleado in empleados:
+                            # Usamos st.container() en lugar de st.expander() para el elemento principal
                             with st.container():
                                 col1, col2, col3 = st.columns([1, 3, 1])
                                 
@@ -856,9 +729,12 @@ def main():
                                     st.write(f"**Estado:** {'Activo' if empleado['activo'] else 'Inactivo'}")
 
                                 with col3:
+                                    # Botón de edición con popup/modal
                                     if st.button("✏️ Editar", key=f"edit_btn_{empleado['id']}"):
+                                        # Usamos st.session_state para controlar qué formulario mostrar
                                         st.session_state[f'edit_{empleado["id"]}'] = True
                                     
+                                    # Mostrar formulario de edición condicionalmente
                                     if st.session_state.get(f'edit_{empleado["id"]}', False):
                                         with st.form(key=f"edit_form_{empleado['id']}"):
                                             st.write(f"### Editando: {empleado['nombre']} {empleado['apellido']}")
@@ -910,6 +786,7 @@ def main():
                                                     st.session_state[f'edit_{empleado["id"]}'] = False
                                                     st.rerun()
                                     
+                                    # Botón de activar/desactivar
                                     if empleado['activo']:
                                         if st.button("❌ Desactivar", key=f"del_btn_{empleado['id']}"):
                                             st.session_state[f'confirm_del_{empleado["id"]}'] = True
@@ -947,7 +824,7 @@ def main():
                                                         st.session_state[f'confirm_act_{empleado["id"]}'] = False
                                                         st.rerun()
                                     
-                                st.markdown("---")
+                                st.markdown("---")  # Separador visual entre empleados
                     else:
                         st.info("No hay empleados registrados en el sistema.")
             except Error as e:
@@ -955,286 +832,47 @@ def main():
     
     # ------------------------- Pestaña de Registro de Vehículos -------------------------
     with tab2:
-        st.header("🚗 Gestión de Vehículos")
+        st.header("📋 Registrar nuevo vehículo")
         
-        # Inicializar estados de sesión si no existen
-        if 'vehiculos_initialized' not in st.session_state:
-            st.session_state.vehiculos_initialized = True
-            # Limpiar estados de edición anteriores
-            for key in list(st.session_state.keys()):
-                if key.startswith('edit_veh_'):
-                    del st.session_state[key]
-        
-        sub_tab1, sub_tab2 = st.tabs(["➕ Registrar Vehículo", "📋 Lista de Vehículos"])
-        
-        with sub_tab1:
-            st.subheader("Registrar nuevo vehículo")
+        empleados = obtener_empleados()
+        if empleados:
+            opciones_empleados = {f"{e['nombre_completo']} (ID {e['id']})": e['id'] for e in empleados}
+            empleado_seleccionado = st.selectbox("Selecciona el empleado dueño del vehículo", list(opciones_empleados.keys()))
+            empleado_id = opciones_empleados[empleado_seleccionado]
             
-            empleados = obtener_empleados()
-            if empleados:
-                opciones_empleados = {f"{e['nombre_completo']} (ID {e['id']})": e['id'] for e in empleados}
-                empleado_seleccionado = st.selectbox(
-                    "Selecciona el empleado dueño del vehículo", 
-                    list(opciones_empleados.keys()),
-                    key="emp_veh_reg"
-                )
-                empleado_id = opciones_empleados[empleado_seleccionado]
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    placa = st.text_input("Placa del vehículo*", key="placa_reg").upper()
-                    marca = st.text_input("Marca", key="marca_reg")
-                    modelo = st.text_input("Modelo", key="modelo_reg")
-                
-                with col2:
-                    tipo = st.selectbox("Tipo de vehículo*", ["CARRO", "MOTO"], key="tipo_reg")
-                    color = st.text_input("Color", key="color_reg")
-                    foto = st.file_uploader(
-                        "Foto del vehículo (opcional)", 
-                        type=["jpg", "png", "jpeg", "webp"],
-                        key="foto_veh_reg"
-                    )
-                
-                if st.button("Registrar vehículo", type="primary", key="btn_reg_veh"):
-                    if placa and empleado_id and tipo:
-                        if es_placa_valida(placa):
-                            foto_bytes = foto.read() if foto else None
-                            resultado = registrar_vehiculo(
-                                empleado_id, 
-                                placa.upper().strip(), 
-                                marca, 
-                                modelo, 
-                                tipo, 
-                                color, 
-                                foto_bytes
-                            )
-                            
-                            if resultado == "existe":
-                                st.warning(f"La placa {placa} ya está registrada en el sistema.")
-                            elif resultado:
-                                st.success("✅ Vehículo registrado exitosamente.")
-                                st.balloons()
-                                st.rerun()
-                            else:
-                                st.error("❌ No se pudo registrar el vehículo.")
-                        else:
-                            st.warning("⚠️ El formato de la placa no es válido.")
-                    else:
-                        st.warning("⚠️ Los campos placa, tipo y empleado son obligatorios.")
-            else:
-                st.error("No hay empleados registrados para asignar vehículos.")
-        
-        with sub_tab2:
-            st.subheader("Lista de vehículos registrados")
+            col1, col2 = st.columns(2)
             
-            # Filtros
-            col1, col2, col3 = st.columns([2, 2, 2])
             with col1:
-                filtro_estado = st.selectbox(
-                    "Filtrar por estado", 
-                    ["Todos", "Activos", "Inactivos"],
-                    key="filtro_estado_veh"
-                )
+                placa = st.text_input("Placa del vehículo").upper()
+                marca = st.text_input("Marca")
+                modelo = st.text_input("Modelo")
+            
             with col2:
-                filtro_tipo = st.selectbox(
-                    "Filtrar por tipo", 
-                    ["Todos", "CARRO", "MOTO"],
-                    key="filtro_tipo_veh"
-                )
-            with col3:
-                buscar_placa = st.text_input(
-                    "Buscar por placa", 
-                    key="buscar_placa_veh"
-                )
+                tipo = st.selectbox("Tipo de vehículo", ["CARRO", "MOTO"])
+                color = st.text_input("Color")
+                foto = st.file_uploader("Foto del vehículo", type=["jpg", "png", "jpeg", "webp"])
             
-            # Obtener vehículos según filtros
-            vehiculos = obtener_vehiculos()
-            
-            if filtro_estado == "Activos":
-                vehiculos = [v for v in vehiculos if v['activo']]
-            elif filtro_estado == "Inactivos":
-                vehiculos = [v for v in vehiculos if not v['activo']]
-                
-            if filtro_tipo != "Todos":
-                vehiculos = [v for v in vehiculos if v['tipo'] == filtro_tipo]
-                
-            if buscar_placa:
-                vehiculos = [v for v in vehiculos if buscar_placa.upper() in v['placa'].upper()]
-            
-            if not vehiculos:
-                st.info("No hay vehículos registrados que coincidan con los filtros")
-            else:
-                for vehiculo in vehiculos:
-                    # Inicializar estado de edición si no existe
-                    if f'edit_veh_{vehiculo["id"]}' not in st.session_state:
-                        st.session_state[f'edit_veh_{vehiculo["id"]}'] = False
-                    
-                    # Inicializar estado de confirmación si no existe
-                    if f'confirm_del_veh_{vehiculo["id"]}' not in st.session_state:
-                        st.session_state[f'confirm_del_veh_{vehiculo["id"]}'] = False
-                    if f'confirm_act_veh_{vehiculo["id"]}' not in st.session_state:
-                        st.session_state[f'confirm_act_veh_{vehiculo["id"]}'] = False
-                    
-                    with st.container():
-                        col1, col2, col3 = st.columns([1, 3, 1])
+            if st.button("Registrar vehículo", type="primary"):
+                if placa and empleado_id and tipo:
+                    if es_placa_valida(placa):
+                        foto_bytes = foto.read() if foto else None
+                        resultado = registrar_vehiculo(empleado_id, placa.upper().strip(), marca, modelo, tipo, color, foto_bytes)
                         
-                        with col1:
-                            conexion = conectar_bd()
-                            if conexion and conexion.is_connected():
-                                cursor = conexion.cursor()
-                                query = "SELECT foto_vehiculo FROM vehiculos WHERE id = %s"
-                                cursor.execute(query, (vehiculo['id'],))
-                                foto_result = cursor.fetchone()
-                                cursor.close()
-                                conexion.close()
-
-                                if foto_result and foto_result[0]:
-                                    mostrar_imagen(foto_result[0])
-                                else:
-                                    st.info("No hay foto registrada")
-                        
-                        with col2:
-                            st.write(f"**Placa:** {vehiculo['placa']}")
-                            st.write(f"**Marca/Modelo:** {vehiculo['marca']} {vehiculo['modelo']}")
-                            st.write(f"**Tipo/Color:** {vehiculo['tipo']} / {vehiculo['color']}")
-                            st.write(f"**Propietario:** {vehiculo['empleado_nombre'] or 'No asignado'}")
-                            st.write(f"**Estado:** {'Activo' if vehiculo['activo'] else 'Inactivo'}")
-                        
-                        with col3:
-                            # Botón de edición con formulario
-                            with st.form(key=f"form_edit_veh_{vehiculo['id']}"):
-                                if st.form_submit_button("✏️ Editar"):
-                                    st.session_state[f'edit_veh_{vehiculo["id"]}'] = not st.session_state[f'edit_veh_{vehiculo["id"]}']
-                                    st.rerun()
-                            
-                            # Mostrar formulario de edición si está activo
-                            if st.session_state[f'edit_veh_{vehiculo["id"]}']:
-                                with st.form(key=f"edit_veh_form_{vehiculo['id']}"):
-                                    st.write(f"### Editando: {vehiculo['placa']}")
-                                    
-                                    empleados = obtener_empleados()
-                                    opciones_empleados = {f"{e['nombre_completo']} (ID {e['id']})": e['id'] for e in empleados}
-                                    
-                                    col_edit1, col_edit2 = st.columns(2)
-                                    with col_edit1:
-                                        placa_new = st.text_input(
-                                            "Placa*", 
-                                            value=vehiculo['placa'], 
-                                            key=f"placa_edit_{vehiculo['id']}"
-                                        )
-                                        marca_new = st.text_input(
-                                            "Marca", 
-                                            value=vehiculo['marca'], 
-                                            key=f"marca_edit_{vehiculo['id']}"
-                                        )
-                                        modelo_new = st.text_input(
-                                            "Modelo", 
-                                            value=vehiculo['modelo'], 
-                                            key=f"modelo_edit_{vehiculo['id']}"
-                                        )
-                                    
-                                    with col_edit2:
-                                        tipo_new = st.selectbox(
-                                            "Tipo*", 
-                                            ["CARRO", "MOTO"], 
-                                            index=0 if vehiculo['tipo'] == "CARRO" else 1,
-                                            key=f"tipo_edit_{vehiculo['id']}"
-                                        )
-                                        color_new = st.text_input(
-                                            "Color", 
-                                            value=vehiculo['color'], 
-                                            key=f"color_edit_{vehiculo['id']}"
-                                        )
-                                        
-                                        default_emp = next(
-                                            (k for k, v in opciones_empleados.items() 
-                                            if v == vehiculo['empleado_id']), 
-                                            None
-                                        )
-                                        emp_new = st.selectbox(
-                                            "Propietario*", 
-                                            list(opciones_empleados.keys()),
-                                            index=list(opciones_empleados.keys()).index(default_emp) if default_emp else 0,
-                                            key=f"emp_edit_{vehiculo['id']}"
-                                        )
-                                        empleado_id_new = opciones_empleados[emp_new]
-                                        
-                                        nueva_foto = st.file_uploader(
-                                            "Actualizar foto", 
-                                            type=["jpg", "png", "jpeg", "webp"],
-                                            key=f"foto_veh_edit_{vehiculo['id']}"
-                                        )
-                                    
-                                    col_btn1, col_btn2 = st.columns(2)
-                                    with col_btn1:
-                                        if st.form_submit_button("💾 Guardar"):
-                                            if not placa_new or not tipo_new or not empleado_id_new:
-                                                st.error("Los campos marcados con * son obligatorios")
-                                            elif not es_placa_valida(placa_new):
-                                                st.error("El formato de la placa no es válido")
-                                            else:
-                                                foto_bytes = nueva_foto.read() if nueva_foto else None
-                                                if modificar_vehiculo(
-                                                    vehiculo['id'], 
-                                                    placa_new, 
-                                                    marca_new, 
-                                                    modelo_new, 
-                                                    tipo_new, 
-                                                    color_new,
-                                                    empleado_id_new,
-                                                    foto_bytes
-                                                ):
-                                                    st.session_state[f'edit_veh_{vehiculo["id"]}'] = False
-                                                    st.rerun()
-                                    
-                                    with col_btn2:
-                                        if st.form_submit_button("❌ Cancelar"):
-                                            st.session_state[f'edit_veh_{vehiculo["id"]}'] = False
-                                            st.rerun()
-                            
-                            # Botones de activar/desactivar
-                            if vehiculo['activo']:
-                                with st.form(key=f"form_del_veh_{vehiculo['id']}"):
-                                    if st.form_submit_button("❌ Desactivar"):
-                                        st.session_state[f'confirm_del_veh_{vehiculo["id"]}'] = True
-                                        st.rerun()
-                                
-                                if st.session_state.get(f'confirm_del_veh_{vehiculo["id"]}', False):
-                                    with st.form(key=f"del_veh_form_{vehiculo['id']}"):
-                                        st.warning(f"¿Confirmas desactivar el vehículo {vehiculo['placa']}?")
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            if st.form_submit_button("✅ Confirmar"):
-                                                if desactivar_vehiculo(vehiculo['id']):
-                                                    st.session_state[f'confirm_del_veh_{vehiculo["id"]}'] = False
-                                                    st.rerun()
-                                        with col2:
-                                            if st.form_submit_button("❌ Cancelar"):
-                                                st.session_state[f'confirm_del_veh_{vehiculo["id"]}'] = False
-                                                st.rerun()
-                            else:
-                                with st.form(key=f"form_act_veh_{vehiculo['id']}"):
-                                    if st.form_submit_button("✅ Activar"):
-                                        st.session_state[f'confirm_act_veh_{vehiculo["id"]}'] = True
-                                        st.rerun()
-                                
-                                if st.session_state.get(f'confirm_act_veh_{vehiculo["id"]}', False):
-                                    with st.form(key=f"act_veh_form_{vehiculo['id']}"):
-                                        st.info(f"¿Confirmas activar el vehículo {vehiculo['placa']}?")
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            if st.form_submit_button("✅ Confirmar"):
-                                                if activar_vehiculo(vehiculo['id']):
-                                                    st.session_state[f'confirm_act_veh_{vehiculo["id"]}'] = False
-                                                    st.rerun()
-                                        with col2:
-                                            if st.form_submit_button("❌ Cancelar"):
-                                                st.session_state[f'confirm_act_veh_{vehiculo["id"]}'] = False
-                                                st.rerun()
-                        
-                        st.markdown("---")
-
+                        if resultado == "existe":
+                            st.warning(f"La placa {placa} ya está registrada en el sistema.")
+                        elif resultado:
+                            st.success("✅ Vehículo registrado exitosamente.")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("❌ No se pudo registrar el vehículo.")
+                    else:
+                        st.warning("⚠️ El formato de la placa no es válido.")
+                else:
+                    st.warning("⚠️ Los campos placa, tipo y empleado son obligatorios.")
+        else:
+            st.error("No se pudo obtener la lista de empleados.")
+    
     # ------------------------- Pestaña de Reconocimiento de Placas -------------------------
     with tab3:
         st.header("🔍 Reconocimiento de placas desde imagen")
